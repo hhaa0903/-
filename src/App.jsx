@@ -312,6 +312,11 @@ function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,o
         </div>
         {restoreMsg&&<div style={{background:restoreMsg.startsWith("✅")?C.greenLight:C.redLight,borderRadius:14,padding:"12px 16px",fontSize:13,fontWeight:600,color:restoreMsg.startsWith("✅")?C.green:C.red,textAlign:"center"}}>{restoreMsg}</div>}
         <div style={{marginTop:16,fontSize:11,color:C.textFaint,lineHeight:1.8}}>💡 建議備份時機：旅行結束後・清除瀏覽器前・換手機前</div>
+        <div style={{marginTop:24,background:"#FFF0EE",borderRadius:18,border:"1.5px solid #D4806A33",padding:"18px"}}>
+<div style={{fontSize:14,fontWeight:700,color:"#D4806A",marginBottom:6}}>🗑️ 重置所有資料</div>
+<div style={{fontSize:12,color:"#BBBBA8",marginBottom:14,lineHeight:1.6}}>清除所有旅行記錄和設定，回到全新狀態。<br/><span style={{color:"#D4806A",fontWeight:600}}>此操作無法復原，請先備份！</span></div>
+<button onClick={()=>{if(window.confirm("⚠️ 確定清除所有資料？\n\n此操作無法復原！")){localStorage.clear();window.location.reload();}}} style={{width:"100%",padding:"13px",borderRadius:16,border:"1.5px solid #D4806A",background:"#FAE8E3",color:"#D4806A",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Helvetica Neue',sans-serif"}}>🗑️ 清除所有資料並重新開始</button>
+</div>
       </>}
     </Sheet>
   );
