@@ -103,7 +103,7 @@ function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,c
     {tab==="currs"&&<><div style={{background:"#E4EBE2",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#A8B5A2",lineHeight:1.7}}>💡 已內建 35 種幣別。若要使用冷門幣別，請在此新增。</div><Lbl ch="新增自訂幣別"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Inp placeholder="幣別代碼 如 MOP" value={newCurr.code} onChange={e=>setNewCurr(p=>({...p,code:e.target.value.toUpperCase()}))}/><Inp placeholder="符號 如 P" value={newCurr.sym} onChange={e=>setNewCurr(p=>({...p,sym:e.target.value}))}/></div><Inp placeholder="幣別名稱 如 澳門幣" value={newCurr.l} onChange={e=>setNewCurr(p=>({...p,l:e.target.value}))} style={{marginBottom:8}}/><div style={{display:"flex",gap:8,marginBottom:14}}><Inp placeholder="對台幣匯率" type="number" value={newCurr.r} onChange={e=>setNewCurr(p=>({...p,r:e.target.value}))} style={{flex:1}}/><Btn sm color="#A8B5A2" onClick={fetchRate} style={{flexShrink:0}}>{fetchingRate?"查詢中...":"🌐 查匯率"}</Btn></div><Btn onClick={addCurr} style={{width:"100%",marginBottom:16}}>+ 新增幣別</Btn>{customCurrs.map(c=><div key={c.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{c.sym} {c.code} {c.l}</div><div style={{fontSize:12,color:"#8A8A7A"}}>1 {c.code} = NT${c.r}</div></div><button onClick={()=>setCustomCurrs(p=>p.filter(x=>x.id!==c.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}</>}
     {tab==="backup"&&<><div style={{background:"#FFF8E8",border:"1px solid #F0D88A",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#8A7040",lineHeight:1.7}}>⚠️ 清除瀏覽器資料會刪除帳本！建議每趟旅行結束後備份。</div><div style={{background:"#FFFFFF",borderRadius:18,border:"1px solid #EDEBE6",padding:"18px",marginBottom:12}}><div style={{fontSize:14,fontWeight:700,color:"#5A5A5A",marginBottom:6}}>📤 匯出備份</div><div style={{fontSize:12,color:"#BBBBA8",marginBottom:12}}>目前：{trips.length} 趟旅行・{banks.length} 個帳號・{cards.length} 張卡</div><Btn onClick={handleBackup} color="#A8B5A2" style={{width:"100%"}}>💾 下載備份檔案</Btn></div><div style={{background:"#FFFFFF",borderRadius:18,border:"1px solid #EDEBE6",padding:"18px",marginBottom:12}}><div style={{fontSize:14,fontWeight:700,color:"#5A5A5A",marginBottom:6}}>📥 還原備份</div><label style={{display:"block",width:"100%",padding:"13px",borderRadius:16,border:"1.5px dashed #C9A89A",background:"#F0E6E1",color:"#C9A89A",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"center",fontFamily:SANS}}>📂 選擇備份檔案<input type="file" accept=".json" onChange={handleRestore} style={{display:"none"}}/></label></div>{restoreMsg&&<div style={{background:restoreMsg.startsWith("✅")?"#E2EFE8":"#FAE8E3",borderRadius:14,padding:"12px 16px",fontSize:13,fontWeight:600,color:restoreMsg.startsWith("✅")?"#88B098":"#D4806A",textAlign:"center",marginBottom:12}}>{restoreMsg}</div>}<div style={{background:"#FFFFFF",borderRadius:18,border:"1.5px solid #D4806A44",padding:"18px"}}><div style={{fontSize:14,fontWeight:700,color:"#D4806A",marginBottom:6}}>🗑️ 重置所有資料</div><div style={{fontSize:12,color:"#BBBBA8",marginBottom:12,lineHeight:1.6}}>清除所有旅行記錄。<br/><span style={{color:"#D4806A",fontWeight:600}}>無法復原，請先備份！</span></div><button onClick={()=>{if(window.confirm("⚠️ 確定清除所有資料？無法復原！")){localStorage.clear();window.location.reload();}}} style={{width:"100%",padding:"13px",borderRadius:16,border:"1.5px solid #D4806A",background:"#FAE8E3",color:"#D4806A",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:SANS}}>🗑️ 清除所有資料並重新開始</button></div></>}
   </Sheet>);
-    }function NewTripSheet({onSave,onClose,allCurrs}){
+}function NewTripSheet({onSave,onClose,allCurrs}){
   const [name,setName]=useState("");const [dest,setDest]=useState("");const [start,setStart]=useState(todayStr());const [end,setEnd]=useState("");const [cover,setCover]=useState("a");const [selCurrs,setSelCurrs]=useState(["TWD"]);
   const toggleCurr=code=>setSelCurrs(p=>p.includes(code)?p.length>1?p.filter(x=>x!==code):p:[...p,code]);
   return(<Sheet onClose={onClose}><SHead title="建立新旅行" onClose={onClose}/>
@@ -203,7 +203,6 @@ function EditExpenseSheet({expense,trip,friends,cards,allCurrs,onSave,onClose}){
   const preferCurrs=trip.preferCurrs??["TWD"];
   const [f,setF]=useState({date:todayStr(),buyer:friends[0]||"",item:"",qty:1,price:"",currency:preferCurrs[0]??"TWD",note:"",payment:"cash",cardId:"",img:null});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
-  const handleImg=async e=>{const file=e.target.files?.[0];if(!file)return;const b64=await compressImg(file);set("img",b64);};
   const total=f.price&&!isNaN(f.price)?+f.price*+f.qty:0;
   const totalTWD=total*(allCurrs.find(c=>c.code===f.currency)?.r??1);
   const selCard=cards.find(c=>c.id===f.cardId);
@@ -219,15 +218,9 @@ function EditExpenseSheet({expense,trip,friends,cards,allCurrs,onSave,onClose}){
     {f.payment==="card"&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>{cards.map(c=><Pill key={c.id} active={f.cardId===c.id} color="#C8B89A" onClick={()=>set("cardId",c.id)}>💳 {c.name} ({c.feeRate}%)</Pill>)}</div>}
     {total>0&&<div style={{background:"#EAE6F2",borderRadius:14,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#B5A8C8",fontWeight:600}}>小計 NT${fmt(grand)}{feeTotal>0&&<span style={{fontWeight:400,fontSize:11}}> (含手續費 NT${fmt(feeTotal)})</span>}</div>}
     <Lbl ch="備註"/><Inp placeholder="口味、顏色⋯" value={f.note} onChange={e=>set("note",e.target.value)} style={{marginBottom:14}}/>
-    <Lbl ch="參考圖片（選填）"/>
-    <label style={{display:"block",width:"100%",marginBottom:20,cursor:"pointer"}}>
-      {f.img?<div style={{position:"relative"}}><img src={f.img} style={{width:"100%",borderRadius:16,maxHeight:180,objectFit:"cover"}} alt="參考圖"/><button onClick={e=>{e.preventDefault();set("img",null);}} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.5)",border:"none",color:"#fff",borderRadius:"50%",width:28,height:28,cursor:"pointer",fontSize:14}}>✕</button></div>
-      :<div style={{width:"100%",height:100,borderRadius:16,border:"1.5px dashed #EDEBE6",background:"#FDFCFB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:24}}>📷</span><span style={{fontSize:12,color:"#BBBBA8"}}>點擊上傳參考圖片</span></div>}
-      <input type="file" accept="image/*" onChange={handleImg} style={{display:"none"}}/>
-    </label>
+    <Lbl ch="參考圖片（選填）"/><ImgUpload img={f.img} onImg={v=>set("img",v)}/>
     <Btn onClick={save} color="#B5A8C8" style={{width:"100%"}}>登記代購</Btn>
   </Sheet>);
-}
 }
 function BillSheet({friend,trip,banks,allCurrs,onClose}){
   const [bankId,setBankId]=useState(banks[0]?.id??"");const [mode,setMode]=useState("detail");const [copied,setCopied]=useState(false);
@@ -360,7 +353,7 @@ function LedgerTab({trip,allCurrs,onAdd,onDel,onEdit}){
       </div>);
     })}
   </div>);
-               }function CollectTab({trip,friends,onFriendsChange,onMarkManyPaid,onUnmarkPaid,onDelRec,onConvert,onBill}){
+}function CollectTab({trip,friends,onFriendsChange,onMarkManyPaid,onUnmarkPaid,onDelRec,onConvert,onBill}){
   const recs=trip.receivables??[];
   const pending=recs.filter(r=>!r.paid);
   const done=recs.filter(r=>r.paid);
@@ -515,7 +508,7 @@ function ProxyTab({trip,allCurrs,onAddWish,onBuyWish,onDelWish,onAdd,onDel,onMar
       {unpaid.length===0&&paid.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:"#BBBBA8"}}><div style={{fontSize:36,marginBottom:8}}>🛍️</div><div style={{fontFamily:SERIF,fontSize:14}}>還沒有已購買的品項</div></div>}
     </>}
   </div>);
-    }function PieChart({data,size=160}){
+}function PieChart({data,size=160}){
   const total=data.reduce((s,d)=>s+d.value,0);if(!total)return null;
   const cx=size/2,cy=size/2,r=size/2-8,ri=r*0.52;let angle=-Math.PI/2;
   const slices=data.map(d=>{const sweep=(d.value/total)*Math.PI*2;const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);angle+=sweep;const x2=cx+r*Math.cos(angle),y2=cy+r*Math.sin(angle);const xi1=cx+ri*Math.cos(angle-sweep),yi1=cy+ri*Math.sin(angle-sweep);const xi2=cx+ri*Math.cos(angle),yi2=cy+ri*Math.sin(angle);const lg=sweep>Math.PI?1:0;return{...d,path:`M${x1},${y1} A${r},${r},0,${lg},1,${x2},${y2} L${xi2},${yi2} A${ri},${ri},0,${lg},0,${xi1},${yi1} Z`};});
@@ -591,4 +584,4 @@ export default function App(){
     {screen==="detail"&&trip&&<TripDetail trip={trip} store={store} banks={store.banks} cards={store.cards} friends={store.friends} allCurrs={store.allCurrs} onBack={()=>setScreen("list")}/>}
     {!welcomed&&<WelcomeModal onClose={closeWelcome}/>}
   </div>);
-    }
+}
