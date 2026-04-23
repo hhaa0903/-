@@ -203,6 +203,7 @@ function EditExpenseSheet({expense,trip,friends,cards,allCurrs,onSave,onClose}){
   const preferCurrs=trip.preferCurrs??["TWD"];
   const [f,setF]=useState({date:todayStr(),buyer:friends[0]||"",item:"",qty:1,price:"",currency:preferCurrs[0]??"TWD",note:"",payment:"cash",cardId:"",img:null});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const handleImg=async e=>{const file=e.target.files?.[0];if(!file)return;const b64=await compressImg(file);set("img",b64);};
   const total=f.price&&!isNaN(f.price)?+f.price*+f.qty:0;
   const totalTWD=total*(allCurrs.find(c=>c.code===f.currency)?.r??1);
   const selCard=cards.find(c=>c.id===f.cardId);
@@ -218,9 +219,15 @@ function EditExpenseSheet({expense,trip,friends,cards,allCurrs,onSave,onClose}){
     {f.payment==="card"&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>{cards.map(c=><Pill key={c.id} active={f.cardId===c.id} color="#C8B89A" onClick={()=>set("cardId",c.id)}>💳 {c.name} ({c.feeRate}%)</Pill>)}</div>}
     {total>0&&<div style={{background:"#EAE6F2",borderRadius:14,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#B5A8C8",fontWeight:600}}>小計 NT${fmt(grand)}{feeTotal>0&&<span style={{fontWeight:400,fontSize:11}}> (含手續費 NT${fmt(feeTotal)})</span>}</div>}
     <Lbl ch="備註"/><Inp placeholder="口味、顏色⋯" value={f.note} onChange={e=>set("note",e.target.value)} style={{marginBottom:14}}/>
-    <Lbl ch="參考圖片（選填）"/><ImgUpload img={f.img} onImg={v=>set("img",v)}/>
+    <Lbl ch="參考圖片（選填）"/>
+    <label style={{display:"block",width:"100%",marginBottom:20,cursor:"pointer"}}>
+      {f.img?<div style={{position:"relative"}}><img src={f.img} style={{width:"100%",borderRadius:16,maxHeight:180,objectFit:"cover"}} alt="參考圖"/><button onClick={e=>{e.preventDefault();set("img",null);}} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.5)",border:"none",color:"#fff",borderRadius:"50%",width:28,height:28,cursor:"pointer",fontSize:14}}>✕</button></div>
+      :<div style={{width:"100%",height:100,borderRadius:16,border:"1.5px dashed #EDEBE6",background:"#FDFCFB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:24}}>📷</span><span style={{fontSize:12,color:"#BBBBA8"}}>點擊上傳參考圖片</span></div>}
+      <input type="file" accept="image/*" onChange={handleImg} style={{display:"none"}}/>
+    </label>
     <Btn onClick={save} color="#B5A8C8" style={{width:"100%"}}>登記代購</Btn>
   </Sheet>);
+}
 }
 function BillSheet({friend,trip,banks,allCurrs,onClose}){
   const [bankId,setBankId]=useState(banks[0]?.id??"");const [mode,setMode]=useState("detail");const [copied,setCopied]=useState(false);
