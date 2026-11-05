@@ -570,13 +570,15 @@ function TripDetail({trip,store,banks,cards,friends,allCurrs,onBack}){
 }
 function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onEdit,apiKey,preferCurrs}){
   const [scanning,setScanning]=useState(false);const [scanErr,setScanErr]=useState(null);
-  const [q,setQ]=useState("");const [fcat,setFcat]=useState("all");
+  const [q,setQ]=useState("");const [fcat,setFcat]=useState("all");const [view,setView]=useState("date");
   const kw=q.trim().toLowerCase();
   const filtered=(trip.expenses??[]).filter(e=>(fcat==="all"||e.category===fcat)&&(!kw||`${e.note??""} ${e.detail??""} ${e.date??""}`.toLowerCase().includes(kw)));
   const fTotal=filtered.reduce((s,e)=>s+(e.myShare??0),0);
   const filtering=kw||fcat!=="all";
-  const grouped=filtered.reduce((a,e)=>{(a[e.date]=a[e.date]||[]).push(e);return a;},{});
-  const dates=Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+  const byCat=view==="cat";
+  const grouped=filtered.reduce((a,e)=>{const k=byCat?(CATS.find(c=>c.id===e.category)?e.category:"other"):e.date;(a[k]=a[k]||[]).push(e);return a;},{});
+  if(byCat)Object.values(grouped).forEach(l=>l.sort((a,b)=>(b.date||"").localeCompare(a.date||"")));
+  const dates=byCat?CATS.map(c=>c.id).filter(k=>grouped[k]):Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
   const handleScanFile=async e=>{
     const file=e.target.files?.[0];if(!file)return;
     if(!apiKey){setScanErr("請先在設定→🤖 AI辨識設定API Key");e.target.value="";return;}
@@ -604,6 +606,7 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
     {scanErr&&<div style={{background:"#FAE8E3",borderRadius:14,padding:"10px 14px",fontSize:12,color:"#D4806A",marginBottom:14}}>{scanErr}</div>}
     <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     {(trip.expenses??[]).length>0&&<div style={{marginBottom:16}}>
+      <div style={{display:"flex",gap:8,marginBottom:8}}>{[{id:"date",l:"📅 依日期"},{id:"cat",l:"🗂 依類別"}].map(v=><Pill key={v.id} active={view===v.id} color="#C9A89A" onClick={()=>setView(v.id)}>{v.l}</Pill>)}</div>
       <Inp placeholder="🔍 搜尋品項、備註、日期" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8}}/>
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}}>
         {[{id:"all",e:"",l:"全部"},...CATS].map(c=><button key={c.id} onClick={()=>setFcat(c.id)} style={{flexShrink:0,padding:"6px 12px",borderRadius:99,border:`1.5px solid ${fcat===c.id?"#C9A89A":"#EDEBE6"}`,background:fcat===c.id?"#F0E6E1":"transparent",color:fcat===c.id?"#C9A89A":"#8A8A7A",fontSize:12,fontWeight:fcat===c.id?700:400,cursor:"pointer",fontFamily:SANS}}>{c.e} {c.l}</button>)}
@@ -613,14 +616,14 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
     {dates.length===0?<div style={{textAlign:"center",padding:"50px 0",color:"#BBBBA8"}}><div style={{fontSize:44,marginBottom:10}}>📒</div><div style={{fontFamily:SERIF,fontSize:15}}>{filtering?"沒有符合的記錄":"還沒有支出記錄"}</div></div>
     :dates.map(date=>{const items=grouped[date];const dayMine=items.reduce((s,e)=>s+(e.myShare??0),0);
       return(<div key={date} style={{marginBottom:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:11,color:"#BBBBA8",letterSpacing:1}}>{date.replace(/-/g," · ")}</span><span style={{fontSize:12,color:"#C9A89A",fontWeight:600}}>我花 NT${fmt(dayMine)}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>{byCat?(()=>{const c=CATS.find(x=>x.id===date);return<span style={{fontSize:13,color:"#5A5A5A",fontWeight:700}}>{c.e} {c.l}<span style={{fontSize:11,color:"#BBBBA8",fontWeight:400}}>{"　"+items.length+" 筆"}</span></span>;})():<span style={{fontSize:11,color:"#BBBBA8",letterSpacing:1}}>{date.replace(/-/g," · ")}</span>}<span style={{fontSize:12,color:"#C9A89A",fontWeight:600}}>我花 NT${fmt(dayMine)}</span></div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {items.map(e=>{const cat=CATS.find(c=>c.id===e.category)||CATS[CATS.length-1];const currSym=allCurrs.find(c=>c.code===e.currency)?.sym??"";const platLabel=e.platformLabel||(e.platform&&e.platform!=="manual"?(PLATFORMS.find(p=>p.id===e.platform)?.l??""):"");const payLabel=getPayLabel(e);
             return(<div key={e.id} onClick={()=>!trip.archived&&onEdit&&onEdit(e)} style={{background:"#FFFFFF",borderRadius:20,border:"1px solid #EDEBE6",boxShadow:"0 2px 10px rgba(180,165,150,0.07)",padding:"13px 15px",cursor:trip.archived?"default":"pointer"}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
                 <div style={{width:42,height:42,borderRadius:14,background:cat.c+"25",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{cat.e}</div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{e.note||cat.l}</div>
+                  <div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{e.note||cat.l}{byCat&&<span style={{fontSize:10,color:"#BBBBA8",fontWeight:400}}>　{(e.date||"").replace(/-/g,"/")}</span>}</div>
                   {e.detail&&<div style={{fontSize:11,color:"#8A8A7A",marginTop:2}}>{e.detail}</div>}
                   <div style={{display:"flex",gap:5,marginTop:3,flexWrap:"wrap",alignItems:"center"}}>
                     <span style={{fontSize:10,background:"#F5F3EF",color:"#8A8A7A",padding:"1px 7px",borderRadius:99}}>{payLabel}</span>
