@@ -17,7 +17,7 @@ const fmtD=(n,d=0)=>new Intl.NumberFormat("zh-TW",{maximumFractionDigits:d}).for
 const todayStr=()=>new Date().toISOString().split("T")[0];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const lsGet=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)??"null")??d;}catch{return d;}};
-const lsSet=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){if(!window.__tfQuota){window.__tfQuota=1;try{alert("手機儲存空間已滿，新資料可能無法保存！請先到 設定→備份 下載備份，並刪除部分收據照片。");}catch{}}}};
 const compressImg=(file,maxW=800)=>new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");const s=Math.min(1,maxW/img.width);c.width=img.width*s;c.height=img.height*s;c.getContext("2d").drawImage(img,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",0.85));};img.src=ev.target.result;};r.readAsDataURL(file);});
 const compressImgSmall=(file,maxW=400)=>new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");const s=Math.min(1,maxW/img.width);c.width=img.width*s;c.height=img.height*s;c.getContext("2d").drawImage(img,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",0.7));};img.src=ev.target.result;};r.readAsDataURL(file);});
 const Lbl=({ch,s})=><div style={{fontSize:10,color:"#BBBBA8",letterSpacing:1.8,marginBottom:7,fontWeight:600,textTransform:"uppercase",...s}}>{ch}</div>;
@@ -32,8 +32,8 @@ function Toast({data}){if(!data)return null;return(<div style={{position:"fixed"
 function ImgUpload({img,onImg}){
   const handleImg=async e=>{const file=e.target.files?.[0];if(!file)return;const b64=await compressImgSmall(file);onImg(b64);};
   return(<label style={{display:"block",width:"100%",marginBottom:14,cursor:"pointer"}}>
-    {img?<div style={{position:"relative"}}><img src={img} style={{width:"100%",borderRadius:16,maxHeight:180,objectFit:"cover"}} alt="參考圖"/><button onClick={e=>{e.preventDefault();onImg(null);}} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.5)",border:"none",color:"#fff",borderRadius:"50%",width:28,height:28,cursor:"pointer",fontSize:14}}>✕</button></div>
-    :<div style={{width:"100%",height:100,borderRadius:16,border:"1.5px dashed #EDEBE6",background:"#FDFCFB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:24}}>📷</span><span style={{fontSize:12,color:"#BBBBA8"}}>點擊上傳參考圖片</span></div>}
+    {img?<div style={{position:"relative"}}><img src={img} style={{width:"100%",borderRadius:16,maxHeight:180,objectFit:"cover"}} alt="照片"/><button onClick={e=>{e.preventDefault();onImg(null);}} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,0.5)",border:"none",color:"#fff",borderRadius:"50%",width:28,height:28,cursor:"pointer",fontSize:14}}>✕</button></div>
+    :<div style={{width:"100%",height:100,borderRadius:16,border:"1.5px dashed #EDEBE6",background:"#FDFCFB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:24}}>📷</span><span style={{fontSize:12,color:"#BBBBA8"}}>點擊上傳照片</span></div>}
     <input type="file" accept="image/*" onChange={handleImg} style={{display:"none"}}/>
   </label>);
 }
@@ -163,6 +163,7 @@ function useStore(){
     setRates(out);const now=new Date();setRatesAt(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`);
     return n;
   };
+  useEffect(()=>{const t=ratesAt?new Date(ratesAt.replace(" ","T")).getTime():0;if(!t||Date.now()-t>12*3600*1000){refreshRates().catch(()=>{});}},[]);
   const allPays=[...BASE_PAYS,...customPays];
   const active=trips.find(t=>t.id===activeId)??null;
   const upd=(id,p)=>setTrips(prev=>prev.map(t=>t.id===id?{...t,...p}:t));
@@ -190,12 +191,13 @@ function useStore(){
   const markManyProxyPaid=(tid,pids)=>{setTrips(prev=>prev.map(t=>t.id===tid?{...t,proxies:(t.proxies??[]).map(p=>pids.includes(p.id)?{...p,paid:true}:p)}:t));};
   const convertToExp=(tid,rid)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;const r=(t.receivables??[]).find(x=>x.id===rid);if(!r)return t;const ne={id:uid(),date:todayStr(),category:"other",note:`${r.friend} 未還款`,amount:r.amount,currency:"TWD",payment:"cash",iParticipate:true,participants:[],myShare:r.amount,friendShares:{},feeTotal:0,isOverseas:false};return{...t,expenses:[ne,...t.expenses],receivables:(t.receivables??[]).map(x=>x.id===rid?{...x,paid:true,converted:true}:x)};}));};
   const addCashWallet=(tid,wallet)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;const existing=(t.cashWallets??[]).findIndex(w=>w.currency===wallet.currency);if(existing>=0){const nw=[...(t.cashWallets??[])];nw[existing]={...nw[existing],amount:nw[existing].amount+wallet.amount,initialAmount:(nw[existing].initialAmount??nw[existing].amount)+wallet.amount};return{...t,cashWallets:nw};}return{...t,cashWallets:[...(t.cashWallets??[]),{...wallet,id:uid(),initialAmount:wallet.amount}]};}));};
+  const setWalletAlert=(tid,wid,v)=>{setTrips(prev=>prev.map(t=>t.id===tid?{...t,cashWallets:(t.cashWallets??[]).map(w=>w.id===wid?{...w,alertBelow:v}:w)}:t));};
   const updateCashWallet=(tid,wid,amount)=>{setTrips(prev=>prev.map(t=>t.id===tid?{...t,cashWallets:(t.cashWallets??[]).map(w=>w.id===wid?{...w,amount}:w)}:t));};
   const delCashWallet=(tid,wid)=>{setTrips(prev=>prev.map(t=>t.id===tid?{...t,cashWallets:(t.cashWallets??[]).filter(w=>w.id!==wid)}:t));};
   const addExchange=(tid,ex)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;let w=[...(t.cashWallets??[])];w=_adj(w,ex.fromCurrency,-ex.fromAmount);const toIdx=w.findIndex(x=>x.currency===ex.toCurrency);if(toIdx>=0)w[toIdx]={...w[toIdx],amount:w[toIdx].amount+ex.toAmount};else w=[...w,{id:uid(),currency:ex.toCurrency,amount:ex.toAmount,initialAmount:ex.toAmount}];return{...t,exchanges:[{...ex,id:uid()},...(t.exchanges??[])],cashWallets:w};}));};
   const delExchange=(tid,eid)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;const ex=(t.exchanges??[]).find(e=>e.id===eid);if(!ex)return t;let w=[...(t.cashWallets??[])];w=_adj(w,ex.fromCurrency,+ex.fromAmount);w=_adj(w,ex.toCurrency,-ex.toAmount);return{...t,exchanges:(t.exchanges??[]).filter(e=>e.id!==eid),cashWallets:w};}));};
-  const restoreAll=data=>{if(data.trips)setTrips(data.trips);if(data.banks)setBanks(data.banks);if(data.cards)setCards(data.cards);if(data.friends)setFriends(data.friends);if(data.customCurrs)setCustomCurrs(data.customCurrs);if(data.customPays)setCustomPays(data.customPays);if(data.trips?.length>0)setActiveId(data.trips[0].id);};
-  return{trips,activeId,setActiveId,active,banks,setBanks,cards,setCards,friends,setFriends,customCurrs,setCustomCurrs,customPays,setCustomPays,allCurrs,allPays,apiKey,setApiKey,refreshRates,ratesAt,createTrip,archiveTrip,reopenTrip,deleteTrip,setCustomDays,addExpense,delExpense,editExpense,addWish,delWish,buyWish,addSelfWish,delSelfWish,buySelfWish,addProxy,delProxy,toggleProxy,markManyPaid,unmarkPaid,delRec,markManyProxyPaid,convertToExp,addCashWallet,updateCashWallet,delCashWallet,addExchange,delExchange,upd,restoreAll};
+  const restoreAll=data=>{if(data.trips)setTrips(data.trips);if(data.banks)setBanks(data.banks);if(data.cards)setCards(data.cards);if(data.friends)setFriends(data.friends);if(data.customCurrs)setCustomCurrs(data.customCurrs);if(data.customPays)setCustomPays(data.customPays);if(data.tpls)lsSet("tf_tpls",data.tpls);if(data.trips?.length>0)setActiveId(data.trips[0].id);};
+  return{trips,activeId,setActiveId,active,banks,setBanks,cards,setCards,friends,setFriends,customCurrs,setCustomCurrs,customPays,setCustomPays,allCurrs,allPays,apiKey,setApiKey,refreshRates,ratesAt,createTrip,archiveTrip,reopenTrip,deleteTrip,setCustomDays,addExpense,delExpense,editExpense,addWish,delWish,buyWish,addSelfWish,delSelfWish,buySelfWish,addProxy,delProxy,toggleProxy,markManyPaid,unmarkPaid,delRec,markManyProxyPaid,convertToExp,addCashWallet,updateCashWallet,setWalletAlert,delCashWallet,addExchange,delExchange,upd,restoreAll};
     }function makeBill(friend,trip,banks,bankId,mode,allCurrs){
   const recs=(trip.receivables??[]).filter(r=>r.friend===friend&&!r.paid);
   const prox=(trip.proxies??[]).filter(p=>p.buyer===friend&&!p.paid);
@@ -222,7 +224,7 @@ function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,c
   const addFriend=()=>{if(nf.trim()&&!friends.includes(nf.trim())){setFriends(p=>[...p,nf.trim()]);setNf("");}};
   const addCurr=()=>{if(newCurr.code.trim()&&newCurr.r){setCustomCurrs(p=>[...p,{...newCurr,id:uid(),r:+newCurr.r}]);setNewCurr({code:"",sym:"",l:"",r:""});}};
   const fetchRate=async()=>{if(!newCurr.code.trim())return;setFetchingRate(true);try{const res=await fetch(`https://api.exchangerate-api.com/v4/latest/TWD`);const data=await res.json();const rate=data.rates[newCurr.code.toUpperCase()];if(rate){setNewCurr(p=>({...p,r:String((1/rate).toFixed(4))}));}else{alert("找不到此幣別匯率");}}catch{alert("無法取得匯率");}setFetchingRate(false);};
-  const handleBackup=()=>{const data={version:1,exportedAt:new Date().toISOString(),trips,banks,cards,friends,customCurrs,customPays};const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`旅行帳本備份_${new Date().toLocaleDateString("zh-TW").replace(/\//g,"-")}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);};
+  const handleBackup=()=>{const data={version:1,exportedAt:new Date().toISOString(),trips,banks,cards,friends,customCurrs,customPays,tpls:lsGet("tf_tpls",[])};const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`旅行帳本備份_${new Date().toLocaleDateString("zh-TW").replace(/\//g,"-")}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);};
   const handleRestore=e=>{const file=e.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(!data.trips||!Array.isArray(data.trips))throw new Error();if(window.confirm(`確定還原？共${data.trips.length}趟旅行`)){onRestore(data);setRestoreMsg("✅ 還原成功！");setTimeout(()=>setRestoreMsg(null),3000);}}catch{setRestoreMsg("❌ 格式不符");setTimeout(()=>setRestoreMsg(null),4000);}};reader.readAsText(file);e.target.value="";};
   const EMOJI_OPTS=["💳","📱","🍎","💰","🏧","🎴","🔑"];
   return(<Sheet onClose={onClose}><SHead title="⚙️ 設定" onClose={onClose}/>
@@ -339,6 +341,10 @@ function AddExpenseSheet({trip,friends,cards,allCurrs,customPays,onSave,onClose,
   const preferCurrs=trip.preferCurrs??["TWD"];
   const [f,setF]=useState({date:todayStr(),category:(prefill?.category??"food"),note:(prefill?.note??""),detail:(prefill?.detail??""),amount:(prefill?.amount??""),currency:(prefill?.currency??(preferCurrs[0]??"TWD")),payment:"cash",cardId:"",iParticipate:true,participants:[],isOverseas:(prefill?.isOverseas??true),platform:(prefill?.platform??""),platformManual:""});
   const [scanDone,setScanDone]=useState(!!prefill);
+  const [tpls,setTpls]=useState(()=>lsGet("tf_tpls",[]));
+  const saveTpls=v=>{setTpls(v);lsSet("tf_tpls",v);};
+  const addTpl=()=>{if(!f.note.trim()){alert("請先填「簡要品項」再存成範本");return;}const t={id:uid(),note:f.note.trim(),category:f.category,amount:f.amount,currency:f.currency,payment:f.payment,cardId:f.cardId,isOverseas:f.isOverseas,platform:f.platform};saveTpls([...tpls.filter(x=>x.note!==t.note),t]);};
+  const useTpl=t=>setF(p=>({...p,note:t.note,category:t.category,amount:t.amount??"",currency:allCurrs.find(c=>c.code===t.currency)?t.currency:p.currency,payment:t.payment,cardId:t.cardId||"",isOverseas:t.isOverseas,platform:t.platform||p.platform}));
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const toggleP=fr=>set("participants",f.participants.includes(fr)?f.participants.filter(x=>x!==fr):[...f.participants,fr]);
   const amtTWD=f.amount&&!isNaN(f.amount)?+f.amount*(allCurrs.find(c=>c.code===f.currency)?.r??1):0;
@@ -367,6 +373,7 @@ function AddExpenseSheet({trip,friends,cards,allCurrs,customPays,onSave,onClose,
     if(result.isOverseas!==undefined)set("isOverseas",result.isOverseas);setScanDone(true);
   };
   return(<Sheet onClose={onClose}><SHead title="新增支出" onClose={onClose}/>
+    {tpls.length>0&&!prefill&&<div style={{marginBottom:14}}><Lbl ch="⚡ 常用範本（點一下帶入）"/><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{tpls.map(t=>{const c=CATS.find(x=>x.id===t.category);return<span key={t.id} style={{display:"inline-flex",alignItems:"center",borderRadius:99,border:"1.5px solid #EDEBE6",background:"#FDFCFB",overflow:"hidden"}}><button onClick={()=>useTpl(t)} style={{border:"none",background:"none",padding:"6px 6px 6px 12px",fontSize:12,color:"#5A5A5A",cursor:"pointer",fontFamily:SANS}}>{c?.e} {t.note}{t.amount?` ${t.amount}`:""}</button><button onClick={()=>{if(window.confirm(`刪除範本「${t.note}」？`))saveTpls(tpls.filter(x=>x.id!==t.id));}} style={{border:"none",background:"none",padding:"6px 10px 6px 4px",fontSize:11,color:"#BBBBA8",cursor:"pointer"}}>✕</button></span>;})}</div></div>}
     {!scanDone&&<ReceiptScanBtn apiKey={apiKey} preferCurrs={preferCurrs} allCurrs={allCurrs} onResult={handleScanResult}/>}
     {scanDone&&prefill&&<div style={{background:"#EAE6F2",borderRadius:14,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#B5A8C8",fontWeight:600}}>✨ AI 辨識完成，請確認並補充資訊</div>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}><div><Lbl ch="日期"/><Inp type="date" value={f.date} onChange={e=>set("date",e.target.value)}/></div><div><Lbl ch="幣別"/><CurrSel value={f.currency} onChange={e=>set("currency",e.target.value)} allCurrs={allCurrs} preferCurrs={preferCurrs}/></div></div>
@@ -386,12 +393,14 @@ function AddExpenseSheet({trip,friends,cards,allCurrs,customPays,onSave,onClose,
     <div style={{marginBottom:14,marginTop:4}}><Toggle on={f.iParticipate} onChange={v=>set("iParticipate",v)} label="我也有參與這筆消費" sub="關閉則我不分攤"/></div>
     <Lbl ch="分攤的朋友（可多選）"/><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>{friends.map(fr=><Pill key={fr} active={f.participants.includes(fr)} color="#A8B5A2" onClick={()=>toggleP(fr)}>👤 {fr}</Pill>)}</div>
     {amtTWD>0&&total>0&&<div style={{background:"#E4EBE2",borderRadius:16,padding:"14px",marginBottom:20}}><div style={{fontSize:12,color:"#A8B5A2",fontWeight:700,marginBottom:8}}>分攤預覽</div>{f.iParticipate&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#5A5A5A",marginBottom:4}}><span>👤 我</span><span style={{fontWeight:700}}>NT${fmt(myShare)}</span></div>}{f.participants.map(fr=><div key={fr} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#5A5A5A",marginBottom:4}}><span>👤 {fr}</span><span style={{fontWeight:700}}>NT${fmt(friendShares[fr])}</span></div>)}</div>}
+    <Lbl ch="收據照片（選填）"/><ImgUpload img={f.img} onImg={v=>set("img",v)}/>
+    <button onClick={addTpl} style={{width:"100%",padding:"11px",borderRadius:14,border:"1.5px dashed #D4B8AB",background:"transparent",color:"#C9A89A",fontSize:13,cursor:"pointer",fontFamily:SANS,marginBottom:10}}>⭐ 把這筆存成常用範本</button>
     <Btn onClick={save} style={{width:"100%"}}>記錄這筆支出</Btn>
   </Sheet>);
 }
 function EditExpenseSheet({expense,trip,friends,cards,allCurrs,customPays,onSave,onClose}){
   const preferCurrs=trip.preferCurrs??["TWD"];const e=expense;
-  const [f,setF]=useState({date:e.date,category:e.category,note:(e.note||""),detail:(e.detail||""),amount:String(e.amount),currency:e.currency,payment:e.payment,cardId:(e.cardId||""),iParticipate:(e.iParticipate??true),participants:(e.participants||[]),isOverseas:(e.isOverseas??true),platform:(e.platform||""),platformManual:(e.platformManual||"")});
+  const [f,setF]=useState({date:e.date,category:e.category,note:(e.note||""),detail:(e.detail||""),amount:String(e.amount),currency:e.currency,payment:e.payment,cardId:(e.cardId||""),iParticipate:(e.iParticipate??true),participants:(e.participants||[]),isOverseas:(e.isOverseas??true),platform:(e.platform||""),platformManual:(e.platformManual||""),img:(e.img||null)});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const toggleP=fr=>set("participants",f.participants.includes(fr)?f.participants.filter(x=>x!==fr):[...f.participants,fr]);
   const amtTWD=f.amount&&!isNaN(f.amount)?+f.amount*(allCurrs.find(c=>c.code===f.currency)?.r??1):0;
@@ -428,6 +437,7 @@ function EditExpenseSheet({expense,trip,friends,cards,allCurrs,customPays,onSave
     <div style={{marginBottom:14,marginTop:4}}><Toggle on={f.iParticipate} onChange={v=>set("iParticipate",v)} label="我也有參與這筆消費" sub="關閉則我不分攤"/></div>
     <Lbl ch="分攤的朋友"/><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>{friends.map(fr=><Pill key={fr} active={f.participants.includes(fr)} color="#A8B5A2" onClick={()=>toggleP(fr)}>👤 {fr}</Pill>)}</div>
     {amtTWD>0&&total>0&&<div style={{background:"#E4EBE2",borderRadius:16,padding:"14px",marginBottom:20}}><div style={{fontSize:12,color:"#A8B5A2",fontWeight:700,marginBottom:8}}>分攤預覽</div>{f.iParticipate&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#5A5A5A",marginBottom:4}}><span>👤 我</span><span style={{fontWeight:700}}>NT${fmt(myShare)}</span></div>}{f.participants.map(fr=><div key={fr} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#5A5A5A",marginBottom:4}}><span>👤 {fr}</span><span style={{fontWeight:700}}>NT${fmt(friendShares[fr])}</span></div>)}</div>}
+    <Lbl ch="收據照片（選填）"/><ImgUpload img={f.img} onImg={v=>set("img",v)}/>
     <Btn onClick={save} color="#A8B5A2" style={{width:"100%"}}>✓ 儲存修改</Btn>
   </Sheet>);
                                                                                                           }function AddProxySheet({friends,cards,allCurrs,customPays,trip,onSave,onClose}){
@@ -464,8 +474,22 @@ function BillSheet({friend,trip,banks,allCurrs,onClose}){
     <Btn onClick={copy} color={copied?"#88B098":"#C9A89A"} style={{width:"100%"}}>{copied?"✓ 已複製！":"📋 複製帳單 → 貼到 LINE"}</Btn>
   </Sheet>);
 }
+function TripCompareSheet({trips,onClose}){
+  const rows=trips.map(t=>{const ex=t.expenses??[];const total=ex.reduce((s,e)=>s+(e.myShare??0),0);const auto=new Set(ex.map(e=>e.date)).size;const days=t.customDays??auto;const per=days>0?total/days:0;const cats=CATS.map(c=>({c,v:ex.filter(e=>e.category===c.id).reduce((s,e)=>s+(e.myShare??0),0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);return{t,total,days,per,n:ex.length,cats};});
+  const maxT=Math.max(1,...rows.map(r=>r.total));const maxP=Math.max(1,...rows.map(r=>r.per));
+  return(<Sheet onClose={onClose}><SHead title="📊 旅行比較" onClose={onClose}/>
+    {rows.map(r=><div key={r.t.id} style={{background:"#fff",border:"1px solid #EDEBE6",borderRadius:18,padding:"14px 16px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}><span style={{fontFamily:SERIF,fontSize:15,fontWeight:700,color:"#5A5A5A"}}>{r.t.name}{r.t.archived?" 📦":""}</span><span style={{fontSize:11,color:"#BBBBA8"}}>{r.days} 天・{r.n} 筆</span></div>
+      <div style={{fontSize:11,color:"#8A8A7A",marginBottom:3}}>總花費　<b style={{color:"#C9A89A"}}>NT${fmt(r.total)}</b></div>
+      <div style={{height:8,borderRadius:99,background:"#F0E6E1",marginBottom:8}}><div style={{height:8,borderRadius:99,background:"#C9A89A",width:`${r.total/maxT*100}%`}}/></div>
+      <div style={{fontSize:11,color:"#8A8A7A",marginBottom:3}}>每日平均　<b style={{color:"#A8B5A2"}}>NT${fmt(r.per)}</b></div>
+      <div style={{height:8,borderRadius:99,background:"#E4EBE2",marginBottom:10}}><div style={{height:8,borderRadius:99,background:"#A8B5A2",width:`${r.per/maxP*100}%`}}/></div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{r.cats.slice(0,4).map(x=><span key={x.c.id} style={{fontSize:11,background:x.c.c+"25",color:"#5A5A5A",borderRadius:99,padding:"3px 9px"}}>{x.c.e} {x.c.l} {r.total>0?Math.round(x.v/r.total*100):0}%</span>)}</div>
+    </div>)}
+  </Sheet>);
+}
 function TripList({trips,activeId,onSelect,onCreate,onArchive,onReopen,onDelete,onSettings,allCurrs}){
-  const [showArch,setShowArch]=useState(false);
+  const [showArch,setShowArch]=useState(false);const [showCmp,setShowCmp]=useState(false);
   const active=trips.filter(t=>!t.archived);const arch=trips.filter(t=>t.archived);
   const cv=t=>COVERS.find(c=>c.id===t.coverId)??COVERS[0];
   return(<div style={{padding:"0 16px 100px"}}>
@@ -473,6 +497,8 @@ function TripList({trips,activeId,onSelect,onCreate,onArchive,onReopen,onDelete,
       <div><div style={{fontSize:10,color:"#BBBBA8",letterSpacing:2,marginBottom:4}}>TRAVEL FOOTPRINT</div><h1 style={{fontFamily:SERIF,fontSize:26,color:"#5A5A5A",margin:"0 0 4px"}}>我的旅行足跡</h1><p style={{fontSize:12,color:"#BBBBA8",margin:0}}>{active.length} 趟進行中・{arch.length} 趟封存</p></div>
       <button onClick={onSettings} style={{background:"#F0E6E1",border:"none",borderRadius:14,padding:"10px 14px",fontSize:13,color:"#C9A89A",cursor:"pointer",fontFamily:SANS,fontWeight:600}}>⚙️ 設定</button>
     </div>
+    {showCmp&&<TripCompareSheet trips={trips} onClose={()=>setShowCmp(false)}/>}
+    {trips.length>=2&&<button onClick={()=>setShowCmp(true)} style={{width:"100%",padding:"12px",borderRadius:16,border:"1px solid #EDEBE6",background:"#fff",color:"#8A8A7A",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:SANS,marginBottom:12}}>📊 比較各趟旅行</button>}
     <button onClick={onCreate} style={{width:"100%",padding:"18px",borderRadius:22,border:"2px dashed #D4B8AB",background:"#F0E6E1",color:"#C9A89A",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:SANS,display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:28}}><span style={{fontSize:22}}>＋</span> 建立新旅行</button>
     {active.length>0&&<><div style={{fontSize:10,color:"#BBBBA8",letterSpacing:1.8,fontWeight:600,marginBottom:12}}>進行中</div>
       {active.map(t=>{
@@ -547,14 +573,14 @@ function TripDetail({trip,store,banks,cards,friends,allCurrs,onBack}){
         {(pendRec+pendProxy)>0&&<div style={{background:"rgba(255,255,255,0.2)",borderRadius:14,padding:"6px 14px"}}><div style={{fontSize:20,fontWeight:800,color:"#fff"}}>NT${fmt(pendRec+pendProxy)}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.75)"}}>待收回來 💚</div></div>}
       </div>
       <div style={{position:"absolute",bottom:-22,left:16,right:16,background:"#FFFFFF",borderRadius:20,padding:5,display:"flex",boxShadow:"0 4px 20px rgba(150,120,100,0.18)",border:"1px solid #EDEBE6"}}>
-        {DTABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"8px 2px",borderRadius:14,border:"none",background:tab===t.id?cv.g:"transparent",color:tab===t.id?"#fff":"#BBBBA8",fontSize:10,fontWeight:tab===t.id?700:400,cursor:"pointer",fontFamily:SANS}}>{t.e}<br/>{t.l}</button>)}
+        {DTABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"8px 2px",borderRadius:14,border:"none",background:tab===t.id?cv.g:"transparent",color:tab===t.id?"#fff":"#BBBBA8",fontSize:10,fontWeight:tab===t.id?700:400,cursor:"pointer",fontFamily:SANS}}>{t.e}<br/>{t.l}{t.id==="cash"&&(trip.cashWallets??[]).some(w=>w.alertBelow>0&&w.amount<w.alertBelow)&&<span style={{color:"#D4806A"}}> ●</span>}</button>)}
       </div>
     </div>
     <div style={{height:40}}/>
     {tab==="ledger"&&<LedgerTab trip={trip} allCurrs={allCurrs} cards={cards} customPays={store.customPays} onAdd={()=>openExp(null)} onAddWithScan={prefill=>openExp(prefill)} onDel={eid=>store.delExpense(trip.id,eid)} onEdit={e=>setEditingExp(e)} apiKey={store.apiKey} preferCurrs={trip.preferCurrs??["TWD"]}/>}
     {tab==="collect"&&<CollectTab trip={trip} friends={friends} allCurrs={allCurrs} onFriendsChange={store.setFriends} onMarkManyPaid={(rids,type,curr,amt)=>store.markManyPaid(trip.id,rids,type,curr,amt)} onUnmarkPaid={rid=>store.unmarkPaid(trip.id,rid)} onDelRec={rid=>store.delRec(trip.id,rid)} onConvert={rid=>store.convertToExp(trip.id,rid)} onBill={f=>setBillFriend(f)}/>}
     {tab==="proxy"&&<ProxyTab trip={trip} allCurrs={allCurrs} onAddWish={()=>setModal("wish")} onBuyWish={w=>setBuyingWish(w)} onDelWish={wid=>store.delWish(trip.id,wid)} onAddSelfWish={()=>setModal("selfwish")} onBuySelfWish={w=>setBuyingSelf(w)} onDelSelfWish={wid=>store.delSelfWish(trip.id,wid)} onAdd={()=>setModal("proxy")} onDel={pid=>store.delProxy(trip.id,pid)} onMarkManyProxyPaid={pids=>store.markManyProxyPaid(trip.id,pids)} onToggle={pid=>store.toggleProxy(trip.id,pid)} onBill={f=>setBillFriend(f)}/>}
-    {tab==="cash"&&<CashTab trip={trip} allCurrs={allCurrs} onAddWallet={w=>store.addCashWallet(trip.id,w)} onUpdateWallet={(wid,amt)=>store.updateCashWallet(trip.id,wid,amt)} onDelWallet={wid=>store.delCashWallet(trip.id,wid)} onAddExchange={ex=>store.addExchange(trip.id,ex)} onDelExchange={eid=>store.delExchange(trip.id,eid)}/>}
+    {tab==="cash"&&<CashTab trip={trip} allCurrs={allCurrs} onAddWallet={w=>store.addCashWallet(trip.id,w)} onSetAlert={(wid,v)=>store.setWalletAlert(trip.id,wid,v)} onUpdateWallet={(wid,amt)=>store.updateCashWallet(trip.id,wid,amt)} onDelWallet={wid=>store.delCashWallet(trip.id,wid)} onAddExchange={ex=>store.addExchange(trip.id,ex)} onDelExchange={eid=>store.delExchange(trip.id,eid)}/>}
     {tab==="stats"&&<StatsTab trip={trip} allCurrs={allCurrs} cards={cards} customPays={store.customPays} onOpenPrint={m=>setPrintMode(m)} onExportCSV={()=>exportCSV(trip,allCurrs,cards,store.customPays)} onSetCustomDays={d=>store.setCustomDays(trip.id,d)}/>}
     {modal==="exp"&&<AddExpenseSheet trip={trip} friends={friends} cards={cards} allCurrs={allCurrs} customPays={store.customPays} onSave={(exp,recs)=>store.addExpense(trip.id,exp,recs)} onClose={()=>{setModal(null);setExpPrefill(null);}} prefill={expPrefill} apiKey={store.apiKey}/>}
     {modal==="proxy"&&<AddProxySheet friends={friends} cards={cards} allCurrs={allCurrs} customPays={store.customPays} trip={trip} onSave={p=>store.addProxy(trip.id,p)} onClose={()=>setModal(null)}/>}
@@ -570,7 +596,7 @@ function TripDetail({trip,store,banks,cards,friends,allCurrs,onBack}){
 }
 function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onEdit,apiKey,preferCurrs}){
   const [scanning,setScanning]=useState(false);const [scanErr,setScanErr]=useState(null);
-  const [q,setQ]=useState("");const [fcat,setFcat]=useState("all");const [view,setView]=useState("date");
+  const [viewImg,setViewImg]=useState(null);const [q,setQ]=useState("");const [fcat,setFcat]=useState("all");const [view,setView]=useState("date");
   const kw=q.trim().toLowerCase();
   const filtered=(trip.expenses??[]).filter(e=>(fcat==="all"||e.category===fcat)&&(!kw||`${e.note??""} ${e.detail??""} ${e.date??""}`.toLowerCase().includes(kw)));
   const fTotal=filtered.reduce((s,e)=>s+(e.myShare??0),0);
@@ -603,6 +629,7 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
         <input type="file" accept="image/*" capture="environment" onChange={handleScanFile} style={{display:"none"}} disabled={scanning||trip.archived}/>
       </label>
     </div>}
+    {viewImg&&<div onClick={()=>setViewImg(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:600,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><img src={viewImg} alt="收據" style={{maxWidth:"100%",maxHeight:"100%",borderRadius:12}}/><div style={{position:"absolute",top:16,right:20,color:"#fff",fontSize:24}}>✕</div></div>}
     {scanErr&&<div style={{background:"#FAE8E3",borderRadius:14,padding:"10px 14px",fontSize:12,color:"#D4806A",marginBottom:14}}>{scanErr}</div>}
     <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     {(trip.expenses??[]).length>0&&<div style={{marginBottom:16}}>
@@ -635,7 +662,7 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
                 <div style={{textAlign:"right",flexShrink:0}}>
                   <div style={{fontSize:12,color:"#BBBBA8"}}>{e.currency!=="TWD"?`${currSym}${fmt(e.amount)}`:`NT$${fmt(e.amount)}`}</div>
                   <div style={{fontSize:15,fontWeight:700,color:"#C9A89A"}}>我：NT${fmt(e.myShare??0)}</div>
-                  {!trip.archived&&<div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:3}}><span style={{fontSize:10,color:"#A8B5A2"}}>✏️ 點編輯</span><button onClick={ev=>{ev.stopPropagation();if(window.confirm(`確定刪除「${e.note||"此筆支出"}」？\n相關代墊與現金會一併還原。`))onDel(e.id);}} style={{background:"none",border:"none",fontSize:10,color:"#BBBBA8",cursor:"pointer",padding:0}}>刪除</button></div>}
+                  {!trip.archived&&<div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:3}}>{e.img&&<img src={e.img} alt="收據" onClick={ev=>{ev.stopPropagation();setViewImg(e.img);}} style={{width:26,height:26,borderRadius:6,objectFit:"cover",border:"1px solid #EDEBE6",cursor:"zoom-in"}}/>}<span style={{fontSize:10,color:"#A8B5A2"}}>✏️ 點編輯</span><button onClick={ev=>{ev.stopPropagation();if(window.confirm(`確定刪除「${e.note||"此筆支出"}」？\n相關代墊與現金會一併還原。`))onDel(e.id);}} style={{background:"none",border:"none",fontSize:10,color:"#BBBBA8",cursor:"pointer",padding:0}}>刪除</button></div>}
                 </div>
               </div>
             </div>);
@@ -741,14 +768,15 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
     </div>}
   </div>);
 }
-function CashTab({trip,allCurrs,onAddWallet,onUpdateWallet,onDelWallet,onAddExchange,onDelExchange}){
+function CashTab({trip,allCurrs,onSetAlert,onAddWallet,onUpdateWallet,onDelWallet,onAddExchange,onDelExchange}){
   const wallets=trip.cashWallets??[];const exchanges=trip.exchanges??[];
   const [subTab,setSubTab]=useState("wallet");
   const [showAddWallet,setShowAddWallet]=useState(false);
   const [showAddExchange,setShowAddExchange]=useState(false);
   const [newW,setNewW]=useState({currency:"TWD",amount:""});
   const [ex,setEx]=useState({date:todayStr(),fromCurrency:"TWD",fromAmount:"",toCurrency:"JPY",toAmount:"",note:""});
-  const [editingWid,setEditingWid]=useState(null);const [editAmt,setEditAmt]=useState("");
+  const [editingWid,setEditingWid]=useState(null);const [editAmt,setEditAmt]=useState("");const [alertWid,setAlertWid]=useState(null);const [alertVal,setAlertVal]=useState("");
+  const lowWallets=wallets.filter(w=>w.alertBelow>0&&w.amount<w.alertBelow);
   const preferCurrs=trip.preferCurrs??["TWD"];
   const totalTWD=wallets.reduce((s,w)=>{const r=allCurrs.find(c=>c.code===w.currency)?.r??1;return s+w.amount*r;},0);
   return(<div style={{padding:"16px 16px 100px"}}>
@@ -757,6 +785,7 @@ function CashTab({trip,allCurrs,onAddWallet,onUpdateWallet,onDelWallet,onAddExch
       <div style={{fontSize:30,fontWeight:800,color:"#C8B89A",fontFamily:SERIF}}>NT${fmt(totalTWD)}</div>
       <div style={{fontSize:12,color:"#BBBBA8",marginTop:4}}>{wallets.length} 種幣別</div>
     </div>
+    {lowWallets.length>0&&<div style={{background:"#FAE8E3",border:"1px solid #F0C4B8",borderRadius:16,padding:"12px 14px",marginBottom:14,fontSize:13,color:"#D4806A",fontWeight:600,lineHeight:1.7}}>⚠️ 現金不足，該換匯了：{lowWallets.map(w=>`${w.currency} 剩 ${fmtD(w.amount,0)}（低於 ${fmtD(w.alertBelow,0)}）`).join("、")}</div>}
     <div style={{display:"flex",gap:8,marginBottom:16}}>{[{id:"wallet",l:"💵 現金錢包"},{id:"exchange",l:"💱 換匯紀錄"}].map(t=><Pill key={t.id} active={subTab===t.id} color="#C8B89A" onClick={()=>setSubTab(t.id)}>{t.l}</Pill>)}</div>
     {subTab==="wallet"&&<>
       {!trip.archived&&<button onClick={()=>setShowAddWallet(p=>!p)} style={{width:"100%",padding:"13px",borderRadius:18,border:"2px dashed #C8B89A",background:"#EDE6D8",color:"#C8B89A",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:SANS,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><span style={{fontSize:18}}>+</span>新增現金</button>}
@@ -779,6 +808,9 @@ function CashTab({trip,allCurrs,onAddWallet,onUpdateWallet,onDelWallet,onAddExch
                 ?<div style={{display:"flex",gap:6,marginTop:4}}><Inp type="number" value={editAmt} onChange={e=>setEditAmt(e.target.value)} style={{flex:1,padding:"8px 10px",fontSize:14}}/><button onClick={()=>{onUpdateWallet(w.id,+editAmt);setEditingWid(null);}} style={{padding:"8px 14px",borderRadius:10,border:"none",background:"#88B098",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:SANS}}>✓</button><button onClick={()=>setEditingWid(null)} style={{padding:"8px 10px",borderRadius:10,border:"1px solid #EDEBE6",background:"transparent",color:"#BBBBA8",fontSize:12,cursor:"pointer",fontFamily:SANS}}>✕</button></div>
                 :<div><div style={{fontSize:22,fontWeight:800,color:"#5A5A5A"}}>{fmtD(w.amount,0)} <span style={{fontSize:13,color:"#8A8A7A"}}>{w.currency}</span></div>{w.initialAmount!=null&&w.initialAmount!==w.amount&&<div style={{fontSize:11,color:"#BBBBA8",marginTop:2}}>原始攜帶：{fmtD(w.initialAmount,0)} {w.currency}</div>}</div>}
               <div style={{fontSize:12,color:"#BBBBA8",marginTop:2}}>≈ NT${fmt(twdVal)}</div>
+              {alertWid===w.id
+                ?<div style={{display:"flex",gap:6,marginTop:6}}><Inp type="number" placeholder={`低於多少提醒（${w.currency}）`} value={alertVal} onChange={e=>setAlertVal(e.target.value)} style={{flex:1,padding:"8px 10px",fontSize:13}}/><button onClick={()=>{onSetAlert(w.id,+alertVal>0?+alertVal:0);setAlertWid(null);}} style={{padding:"8px 12px",borderRadius:10,border:"none",background:"#88B098",color:"#fff",fontSize:12,cursor:"pointer"}}>儲存</button></div>
+                :<div style={{fontSize:11,marginTop:4,color:w.alertBelow>0&&w.amount<w.alertBelow?"#D4806A":"#BBBBA8"}}>{w.alertBelow>0?`🔔 低於 ${fmtD(w.alertBelow,0)} 提醒`:"🔕 未設定不足提醒"}{!trip.archived&&<button onClick={()=>{setAlertWid(w.id);setAlertVal(w.alertBelow?String(w.alertBelow):"");}} style={{background:"none",border:"none",color:"#A8B5A2",fontSize:11,cursor:"pointer",marginLeft:6,padding:0,fontFamily:SANS}}>設定</button>}</div>}
             </div>
             {!trip.archived&&editingWid!==w.id&&<div style={{display:"flex",gap:6}}>
               <button onClick={()=>{setEditingWid(w.id);setEditAmt(String(w.amount));}} style={{padding:"7px 10px",borderRadius:9,border:"1px solid #EDEBE6",background:"transparent",color:"#8A8A7A",fontSize:11,cursor:"pointer",fontFamily:SANS}}>✏️</button>
