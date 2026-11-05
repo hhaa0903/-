@@ -141,6 +141,10 @@ function useStore(){
   const [customCurrs,setCustomCurrs]=useState(()=>lsGet("tf_currs",[]));
   const [customPays,setCustomPays]=useState(()=>lsGet("tf_pays",[]));
   const [apiKey,setApiKey]=useState(()=>lsGet("tf_apikey",""));
+  const [rates,setRates]=useState(()=>lsGet("tf_rates",{}));
+  const [ratesAt,setRatesAt]=useState(()=>lsGet("tf_rates_at",""));
+  useEffect(()=>lsSet("tf_rates",rates),[rates]);
+  useEffect(()=>lsSet("tf_rates_at",ratesAt),[ratesAt]);
   useEffect(()=>lsSet("tf_trips",trips),[trips]);
   useEffect(()=>lsSet("tf_active",activeId),[activeId]);
   useEffect(()=>lsSet("tf_banks",banks),[banks]);
@@ -149,7 +153,16 @@ function useStore(){
   useEffect(()=>lsSet("tf_currs",customCurrs),[customCurrs]);
   useEffect(()=>lsSet("tf_pays",customPays),[customPays]);
   useEffect(()=>lsSet("tf_apikey",apiKey),[apiKey]);
-  const allCurrs=[...BASE_CURRS,...customCurrs];
+  const allCurrs=[...BASE_CURRS.map(c=>(c.code!=="TWD"&&rates[c.code])?{...c,r:rates[c.code]}:c),...customCurrs];
+  const refreshRates=async()=>{
+    const res=await fetch("https://api.exchangerate-api.com/v4/latest/TWD");
+    if(!res.ok)throw new Error("連線失敗");
+    const data=await res.json();const out={};let n=0;
+    BASE_CURRS.forEach(c=>{if(c.code==="TWD")return;const v=data.rates?.[c.code];if(v&&v>0){out[c.code]=+(1/v).toPrecision(6);n++;}});
+    if(!n)throw new Error("沒有取得匯率");
+    setRates(out);const now=new Date();setRatesAt(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`);
+    return n;
+  };
   const allPays=[...BASE_PAYS,...customPays];
   const active=trips.find(t=>t.id===activeId)??null;
   const upd=(id,p)=>setTrips(prev=>prev.map(t=>t.id===id?{...t,...p}:t));
@@ -182,7 +195,7 @@ function useStore(){
   const addExchange=(tid,ex)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;let w=[...(t.cashWallets??[])];w=_adj(w,ex.fromCurrency,-ex.fromAmount);const toIdx=w.findIndex(x=>x.currency===ex.toCurrency);if(toIdx>=0)w[toIdx]={...w[toIdx],amount:w[toIdx].amount+ex.toAmount};else w=[...w,{id:uid(),currency:ex.toCurrency,amount:ex.toAmount,initialAmount:ex.toAmount}];return{...t,exchanges:[{...ex,id:uid()},...(t.exchanges??[])],cashWallets:w};}));};
   const delExchange=(tid,eid)=>{setTrips(prev=>prev.map(t=>{if(t.id!==tid)return t;const ex=(t.exchanges??[]).find(e=>e.id===eid);if(!ex)return t;let w=[...(t.cashWallets??[])];w=_adj(w,ex.fromCurrency,+ex.fromAmount);w=_adj(w,ex.toCurrency,-ex.toAmount);return{...t,exchanges:(t.exchanges??[]).filter(e=>e.id!==eid),cashWallets:w};}));};
   const restoreAll=data=>{if(data.trips)setTrips(data.trips);if(data.banks)setBanks(data.banks);if(data.cards)setCards(data.cards);if(data.friends)setFriends(data.friends);if(data.customCurrs)setCustomCurrs(data.customCurrs);if(data.customPays)setCustomPays(data.customPays);if(data.trips?.length>0)setActiveId(data.trips[0].id);};
-  return{trips,activeId,setActiveId,active,banks,setBanks,cards,setCards,friends,setFriends,customCurrs,setCustomCurrs,customPays,setCustomPays,allCurrs,allPays,apiKey,setApiKey,createTrip,archiveTrip,reopenTrip,deleteTrip,setCustomDays,addExpense,delExpense,editExpense,addWish,delWish,buyWish,addSelfWish,delSelfWish,buySelfWish,addProxy,delProxy,toggleProxy,markManyPaid,unmarkPaid,delRec,markManyProxyPaid,convertToExp,addCashWallet,updateCashWallet,delCashWallet,addExchange,delExchange,upd,restoreAll};
+  return{trips,activeId,setActiveId,active,banks,setBanks,cards,setCards,friends,setFriends,customCurrs,setCustomCurrs,customPays,setCustomPays,allCurrs,allPays,apiKey,setApiKey,refreshRates,ratesAt,createTrip,archiveTrip,reopenTrip,deleteTrip,setCustomDays,addExpense,delExpense,editExpense,addWish,delWish,buyWish,addSelfWish,delSelfWish,buySelfWish,addProxy,delProxy,toggleProxy,markManyPaid,unmarkPaid,delRec,markManyProxyPaid,convertToExp,addCashWallet,updateCashWallet,delCashWallet,addExchange,delExchange,upd,restoreAll};
     }function makeBill(friend,trip,banks,bankId,mode,allCurrs){
   const recs=(trip.receivables??[]).filter(r=>r.friend===friend&&!r.paid);
   const prox=(trip.proxies??[]).filter(p=>p.buyer===friend&&!p.paid);
@@ -198,8 +211,9 @@ function useStore(){
   lines.push("\n麻煩轉帳給我，謝謝 🙏");
   return lines.join("\n");
 }
-function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,customCurrs,setCustomCurrs,customPays,setCustomPays,apiKey,setApiKey,onRestore,onClose}){
-  const [tab,setTab]=useState("friends");
+function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,customCurrs,setCustomCurrs,customPays,setCustomPays,apiKey,setApiKey,onRestore,onClose,refreshRates,ratesAt}){
+  const [tab,setTab]=useState("friends");const [rmsg,setRmsg]=useState("");const [rbusy,setRbusy]=useState(false);
+  const doRefresh=async()=>{setRbusy(true);setRmsg("");try{const n=await refreshRates();setRmsg(`✅ 已更新 ${n} 種幣別`);}catch(ex){setRmsg(`❌ 更新失敗：${ex.message||"請檢查網路"}`);}setRbusy(false);};
   const [nf,setNf]=useState("");const [nb,setNb]=useState({bankName:"",account:"",holder:""});const [nc,setNc]=useState({name:"",feeRateOverseas:"",feeRateDomestic:"0"});const [np,setNp]=useState({name:"",e:"💳",feeRateOverseas:"",feeRateDomestic:"0"});
   const [restoreMsg,setRestoreMsg]=useState(null);const [newCurr,setNewCurr]=useState({code:"",sym:"",l:"",r:""});const [fetchingRate,setFetchingRate]=useState(false);const [keyInput,setKeyInput]=useState(apiKey);const [keyVisible,setKeyVisible]=useState(false);
   const addBank=()=>{if(nb.bankName.trim()&&nb.account.trim()){setBanks(p=>[...p,{...nb,id:uid()}]);setNb({bankName:"",account:"",holder:""});}};
@@ -217,7 +231,7 @@ function SettingsSheet({banks,setBanks,cards,setCards,friends,setFriends,trips,c
     {tab==="banks"&&<><Lbl ch="我的銀行帳號"/><Inp placeholder="銀行名稱" value={nb.bankName} onChange={e=>setNb(p=>({...p,bankName:e.target.value}))} style={{marginBottom:8}}/><Inp placeholder="帳號" value={nb.account} onChange={e=>setNb(p=>({...p,account:e.target.value}))} style={{marginBottom:8}}/><Inp placeholder="戶名" value={nb.holder} onChange={e=>setNb(p=>({...p,holder:e.target.value}))} style={{marginBottom:10}}/><Btn onClick={addBank} style={{width:"100%",marginBottom:16}}>+ 新增帳號</Btn>{banks.map(b=><div key={b.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>🏦 {b.bankName}</div><div style={{fontSize:12,color:"#8A8A7A"}}>{b.account}・{b.holder}</div></div><button onClick={()=>setBanks(p=>p.filter(x=>x.id!==b.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}</>}
     {tab==="cards"&&<><Lbl ch="我的信用卡"/><div style={{background:"#EAE6F2",borderRadius:14,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#8A78A8",lineHeight:1.7}}>💡 海外消費才計算手續費，國內消費手續費通常為 0%</div><Inp placeholder="卡片名稱" value={nc.name} onChange={e=>setNc(p=>({...p,name:e.target.value}))} style={{marginBottom:8}}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div><Lbl ch="海外手續費 %"/><Inp placeholder="1.5" type="number" value={nc.feeRateOverseas} onChange={e=>setNc(p=>({...p,feeRateOverseas:e.target.value}))}/></div><div><Lbl ch="國內手續費 %"/><Inp placeholder="0" type="number" value={nc.feeRateDomestic} onChange={e=>setNc(p=>({...p,feeRateDomestic:e.target.value}))}/></div></div><Btn onClick={addCard} style={{width:"100%",marginBottom:16}}>+ 新增信用卡</Btn>{cards.map(c=><div key={c.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>💳 {c.name}</div><div style={{fontSize:12,color:"#8A8A7A"}}>海外 {c.feeRateOverseas??c.feeRate??0}%・國內 {c.feeRateDomestic??0}%</div></div><button onClick={()=>setCards(p=>p.filter(x=>x.id!==c.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}</>}
     {tab==="pays"&&<><Lbl ch="自訂支付方式"/><div style={{background:"#E4EBE2",borderRadius:14,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#6A8A7A",lineHeight:1.7}}>💡 新增 Apple Pay、全支付等行動支付，可設定海外與國內手續費</div><div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>{EMOJI_OPTS.map(e=><button key={e} onClick={()=>setNp(p=>({...p,e}))} style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${np.e===e?"#C9A89A":"#EDEBE6"}`,background:np.e===e?"#F0E6E1":"transparent",fontSize:18,cursor:"pointer"}}>{e}</button>)}</div><Inp placeholder="支付方式名稱（如 Apple Pay）" value={np.name} onChange={e=>setNp(p=>({...p,name:e.target.value}))} style={{marginBottom:8}}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div><Lbl ch="海外手續費 %"/><Inp placeholder="1.5" type="number" value={np.feeRateOverseas} onChange={e=>setNp(p=>({...p,feeRateOverseas:e.target.value}))}/></div><div><Lbl ch="國內手續費 %"/><Inp placeholder="0" type="number" value={np.feeRateDomestic} onChange={e=>setNp(p=>({...p,feeRateDomestic:e.target.value}))}/></div></div><Btn onClick={addPay} style={{width:"100%",marginBottom:16}}>+ 新增支付方式</Btn>{customPays.map(p=><div key={p.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{p.e} {p.name}</div><div style={{fontSize:12,color:"#8A8A7A"}}>海外 {p.feeRateOverseas}%・國內 {p.feeRateDomestic}%</div></div><button onClick={()=>setCustomPays(prev=>prev.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}{customPays.length===0&&<div style={{textAlign:"center",padding:"20px 0",color:"#BBBBA8",fontSize:13}}>還沒有自訂支付方式</div>}</>}
-    {tab==="currs"&&<><div style={{background:"#E4EBE2",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#A8B5A2",lineHeight:1.7}}>💡 已內建 35 種幣別。若要使用冷門幣別，請在此新增。</div><Lbl ch="新增自訂幣別"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Inp placeholder="幣別代碼 如 MOP" value={newCurr.code} onChange={e=>setNewCurr(p=>({...p,code:e.target.value.toUpperCase()}))}/><Inp placeholder="符號 如 P" value={newCurr.sym} onChange={e=>setNewCurr(p=>({...p,sym:e.target.value}))}/></div><Inp placeholder="幣別名稱 如 澳門幣" value={newCurr.l} onChange={e=>setNewCurr(p=>({...p,l:e.target.value}))} style={{marginBottom:8}}/><div style={{display:"flex",gap:8,marginBottom:14}}><Inp placeholder="對台幣匯率" type="number" value={newCurr.r} onChange={e=>setNewCurr(p=>({...p,r:e.target.value}))} style={{flex:1}}/><Btn sm color="#A8B5A2" onClick={fetchRate} style={{flexShrink:0}}>{fetchingRate?"查詢中...":"🌐 查匯率"}</Btn></div><Btn onClick={addCurr} style={{width:"100%",marginBottom:16}}>+ 新增幣別</Btn>{customCurrs.map(c=><div key={c.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{c.sym} {c.code} {c.l}</div><div style={{fontSize:12,color:"#8A8A7A"}}>1 {c.code} = NT${c.r}</div></div><button onClick={()=>setCustomCurrs(p=>p.filter(x=>x.id!==c.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}</>}
+    {tab==="currs"&&<><div style={{background:"#F0E6E1",borderRadius:14,padding:"12px 14px",marginBottom:12}}><Btn onClick={doRefresh} style={{width:"100%"}}>{rbusy?"更新中...":"🔄 一鍵更新即時匯率"}</Btn><div style={{fontSize:11,color:"#8A8A7A",marginTop:8,textAlign:"center",lineHeight:1.6}}>{ratesAt?`上次更新：${ratesAt}`:"尚未更新，目前使用內建參考匯率"}{rmsg&&<div style={{marginTop:2}}>{rmsg}</div>}<div style={{color:"#BBBBA8"}}>只影響之後新增的記錄，舊記錄金額不變</div></div></div><div style={{background:"#E4EBE2",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#A8B5A2",lineHeight:1.7}}>💡 已內建 35 種幣別。若要使用冷門幣別，請在此新增。</div><Lbl ch="新增自訂幣別"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><Inp placeholder="幣別代碼 如 MOP" value={newCurr.code} onChange={e=>setNewCurr(p=>({...p,code:e.target.value.toUpperCase()}))}/><Inp placeholder="符號 如 P" value={newCurr.sym} onChange={e=>setNewCurr(p=>({...p,sym:e.target.value}))}/></div><Inp placeholder="幣別名稱 如 澳門幣" value={newCurr.l} onChange={e=>setNewCurr(p=>({...p,l:e.target.value}))} style={{marginBottom:8}}/><div style={{display:"flex",gap:8,marginBottom:14}}><Inp placeholder="對台幣匯率" type="number" value={newCurr.r} onChange={e=>setNewCurr(p=>({...p,r:e.target.value}))} style={{flex:1}}/><Btn sm color="#A8B5A2" onClick={fetchRate} style={{flexShrink:0}}>{fetchingRate?"查詢中...":"🌐 查匯率"}</Btn></div><Btn onClick={addCurr} style={{width:"100%",marginBottom:16}}>+ 新增幣別</Btn>{customCurrs.map(c=><div key={c.id} style={{background:"#FFFFFF",borderRadius:16,border:"1px solid #EDEBE6",padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,color:"#5A5A5A"}}>{c.sym} {c.code} {c.l}</div><div style={{fontSize:12,color:"#8A8A7A"}}>1 {c.code} = NT${c.r}</div></div><button onClick={()=>setCustomCurrs(p=>p.filter(x=>x.id!==c.id))} style={{background:"none",border:"none",color:"#BBBBA8",cursor:"pointer",fontSize:18}}>🗑</button></div>)}</>}
     {tab==="ai"&&<><div style={{background:"#EAE6F2",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#8A78A8",lineHeight:1.8}}>🤖 使用 Anthropic Claude AI 辨識收據<br/>支援日文、韓文、泰文、英文等多國語言<br/>使用 claude-opus-4-6 模型，辨識更準確</div><Lbl ch="Anthropic API Key"/><div style={{display:"flex",gap:8,marginBottom:8}}><Inp type={keyVisible?"text":"password"} placeholder="sk-ant-..." value={keyInput} onChange={e=>setKeyInput(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><button onClick={()=>setKeyVisible(p=>!p)} style={{padding:"12px",borderRadius:14,border:"1.5px solid #EDEBE6",background:"#FDFCFB",cursor:"pointer",fontSize:16}}>{keyVisible?"🙈":"👁"}</button></div><Btn onClick={()=>setApiKey(keyInput)} color="#B5A8C8" style={{width:"100%",marginBottom:12}}>💾 儲存 API Key</Btn>{apiKey&&<div style={{background:"#E2EFE8",borderRadius:12,padding:"10px 14px",fontSize:12,color:"#88B098",fontWeight:600}}>✅ API Key 已設定</div>}<div style={{background:"#FFF8E8",border:"1px solid #F0D88A",borderRadius:14,padding:"12px 14px",marginTop:12,fontSize:11,color:"#8A7040",lineHeight:1.7}}>⚠️ API Key 只存在你的手機，不會上傳任何伺服器<br/>取得方式：前往 console.anthropic.com 申請</div></>}
     {tab==="backup"&&<><div style={{background:"#FFF8E8",border:"1px solid #F0D88A",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#8A7040",lineHeight:1.7}}>⚠️ 清除瀏覽器資料會刪除帳本！建議每趟旅行結束後備份。</div><div style={{background:"#FFFFFF",borderRadius:18,border:"1px solid #EDEBE6",padding:"18px",marginBottom:12}}><div style={{fontSize:14,fontWeight:700,color:"#5A5A5A",marginBottom:6}}>📤 匯出備份</div><div style={{fontSize:12,color:"#BBBBA8",marginBottom:12}}>目前：{trips.length} 趟旅行・{banks.length} 個帳號・{cards.length} 張卡</div><Btn onClick={handleBackup} color="#A8B5A2" style={{width:"100%"}}>💾 下載備份檔案</Btn></div><div style={{background:"#FFFFFF",borderRadius:18,border:"1px solid #EDEBE6",padding:"18px",marginBottom:12}}><div style={{fontSize:14,fontWeight:700,color:"#5A5A5A",marginBottom:6}}>📥 還原備份</div><label style={{display:"block",width:"100%",padding:"13px",borderRadius:16,border:"1.5px dashed #C9A89A",background:"#F0E6E1",color:"#C9A89A",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"center",fontFamily:SANS}}>📂 選擇備份檔案<input type="file" accept=".json" onChange={handleRestore} style={{display:"none"}}/></label></div>{restoreMsg&&<div style={{background:restoreMsg.startsWith("✅")?"#E2EFE8":"#FAE8E3",borderRadius:14,padding:"12px 16px",fontSize:13,fontWeight:600,color:restoreMsg.startsWith("✅")?"#88B098":"#D4806A",textAlign:"center",marginBottom:12}}>{restoreMsg}</div>}<div style={{background:"#FFFFFF",borderRadius:18,border:"1.5px solid #D4806A44",padding:"18px"}}><div style={{fontSize:14,fontWeight:700,color:"#D4806A",marginBottom:6}}>🗑️ 重置所有資料</div><div style={{fontSize:12,color:"#BBBBA8",marginBottom:12,lineHeight:1.6}}>清除所有旅行記錄。<br/><span style={{color:"#D4806A",fontWeight:600}}>無法復原，請先備份！</span></div><button onClick={()=>{if(window.confirm("⚠️ 確定清除所有資料？無法復原！")){localStorage.clear();window.location.reload();}}} style={{width:"100%",padding:"13px",borderRadius:16,border:"1.5px solid #D4806A",background:"#FAE8E3",color:"#D4806A",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:SANS}}>🗑️ 清除所有資料並重新開始</button></div></>}
   </Sheet>);
@@ -462,7 +476,7 @@ function TripList({trips,activeId,onSelect,onCreate,onArchive,onReopen,onDelete,
     <button onClick={onCreate} style={{width:"100%",padding:"18px",borderRadius:22,border:"2px dashed #D4B8AB",background:"#F0E6E1",color:"#C9A89A",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:SANS,display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:28}}><span style={{fontSize:22}}>＋</span> 建立新旅行</button>
     {active.length>0&&<><div style={{fontSize:10,color:"#BBBBA8",letterSpacing:1.8,fontWeight:600,marginBottom:12}}>進行中</div>
       {active.map(t=>{
-        const cover=cv(t);const myT=t.expenses.reduce((s,e)=>s+(e.myShare??0),0);
+        const cover=cv(t);const myT=(t.expenses??[]).reduce((s,e)=>s+(e.myShare??0),0);
         const pend=(t.receivables??[]).filter(r=>!r.paid).reduce((s,r)=>s+r.amount,0)+((t.proxies??[]).filter(p=>!p.paid).reduce((s,p)=>s+(p.totalTWD??0),0));
         const wishPending=(t.wishlist??[]).filter(w=>!w.done).length;const selfPending=(t.selflist??[]).filter(w=>!w.done).length;
         const wallets=t.cashWallets??[];
@@ -493,7 +507,7 @@ function TripList({trips,activeId,onSelect,onCreate,onArchive,onReopen,onDelete,
     </>}
     {arch.length>0&&<div style={{marginTop:20}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}><div style={{fontSize:10,color:"#BBBBA8",letterSpacing:1.8,fontWeight:600}}>歷史旅行</div><button onClick={()=>setShowArch(p=>!p)} style={{fontSize:12,color:"#BBBBA8",background:"none",border:"none",cursor:"pointer",fontFamily:SANS}}>{showArch?"收起▲":"展開▼"}({arch.length})</button></div>
-      {showArch&&arch.map(t=>{const cover=cv(t);const myT=t.expenses.reduce((s,e)=>s+(e.myShare??0),0);
+      {showArch&&arch.map(t=>{const cover=cv(t);const myT=(t.expenses??[]).reduce((s,e)=>s+(e.myShare??0),0);
         return(<div key={t.id} style={{background:"#FFFFFF",borderRadius:20,border:"1px solid #EDEBE6",marginBottom:10,overflow:"hidden",opacity:0.85}}>
           <div style={{height:4,background:cover.g}}/>
           <div style={{padding:"12px 16px",display:"flex",gap:10,alignItems:"center"}}>
@@ -519,7 +533,7 @@ function TripDetail({trip,store,banks,cards,friends,allCurrs,onBack}){
   const [expPrefill,setExpPrefill]=useState(null);
   const showToast=t=>{setToast(t);setTimeout(()=>setToast(null),4000);};
   const cv=COVERS.find(c=>c.id===trip.coverId)??COVERS[0];
-  const myTotal=trip.expenses.reduce((s,e)=>s+(e.myShare??0),0);
+  const myTotal=(trip.expenses??[]).reduce((s,e)=>s+(e.myShare??0),0);
   const pendRec=(trip.receivables??[]).filter(r=>!r.paid).reduce((s,r)=>s+r.amount,0);
   const pendProxy=(trip.proxies??[]).filter(p=>!p.paid).reduce((s,p)=>s+(p.totalTWD??0),0);
   const openExp=(prefill=null)=>{setExpPrefill(prefill);setModal("exp");};
@@ -556,7 +570,12 @@ function TripDetail({trip,store,banks,cards,friends,allCurrs,onBack}){
 }
 function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onEdit,apiKey,preferCurrs}){
   const [scanning,setScanning]=useState(false);const [scanErr,setScanErr]=useState(null);
-  const grouped=trip.expenses.reduce((a,e)=>{(a[e.date]=a[e.date]||[]).push(e);return a;},{});
+  const [q,setQ]=useState("");const [fcat,setFcat]=useState("all");
+  const kw=q.trim().toLowerCase();
+  const filtered=(trip.expenses??[]).filter(e=>(fcat==="all"||e.category===fcat)&&(!kw||`${e.note??""} ${e.detail??""} ${e.date??""}`.toLowerCase().includes(kw)));
+  const fTotal=filtered.reduce((s,e)=>s+(e.myShare??0),0);
+  const filtering=kw||fcat!=="all";
+  const grouped=filtered.reduce((a,e)=>{(a[e.date]=a[e.date]||[]).push(e);return a;},{});
   const dates=Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
   const handleScanFile=async e=>{
     const file=e.target.files?.[0];if(!file)return;
@@ -584,7 +603,14 @@ function LedgerTab({trip,allCurrs,cards,customPays,onAdd,onAddWithScan,onDel,onE
     </div>}
     {scanErr&&<div style={{background:"#FAE8E3",borderRadius:14,padding:"10px 14px",fontSize:12,color:"#D4806A",marginBottom:14}}>{scanErr}</div>}
     <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-    {dates.length===0?<div style={{textAlign:"center",padding:"50px 0",color:"#BBBBA8"}}><div style={{fontSize:44,marginBottom:10}}>📒</div><div style={{fontFamily:SERIF,fontSize:15}}>還沒有支出記錄</div></div>
+    {(trip.expenses??[]).length>0&&<div style={{marginBottom:16}}>
+      <Inp placeholder="🔍 搜尋品項、備註、日期" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8}}/>
+      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}}>
+        {[{id:"all",e:"",l:"全部"},...CATS].map(c=><button key={c.id} onClick={()=>setFcat(c.id)} style={{flexShrink:0,padding:"6px 12px",borderRadius:99,border:`1.5px solid ${fcat===c.id?"#C9A89A":"#EDEBE6"}`,background:fcat===c.id?"#F0E6E1":"transparent",color:fcat===c.id?"#C9A89A":"#8A8A7A",fontSize:12,fontWeight:fcat===c.id?700:400,cursor:"pointer",fontFamily:SANS}}>{c.e} {c.l}</button>)}
+      </div>
+      {filtering&&<div style={{fontSize:12,color:"#8A8A7A",marginTop:8}}>符合 {filtered.length} 筆　我花 NT${fmt(fTotal)}</div>}
+    </div>}
+    {dates.length===0?<div style={{textAlign:"center",padding:"50px 0",color:"#BBBBA8"}}><div style={{fontSize:44,marginBottom:10}}>📒</div><div style={{fontFamily:SERIF,fontSize:15}}>{filtering?"沒有符合的記錄":"還沒有支出記錄"}</div></div>
     :dates.map(date=>{const items=grouped[date];const dayMine=items.reduce((s,e)=>s+(e.myShare??0),0);
       return(<div key={date} style={{marginBottom:20}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:11,color:"#BBBBA8",letterSpacing:1}}>{date.replace(/-/g," · ")}</span><span style={{fontSize:12,color:"#C9A89A",fontWeight:600}}>我花 NT${fmt(dayMine)}</span></div>
@@ -883,7 +909,7 @@ function ProxyTab({trip,allCurrs,onAddWish,onBuyWish,onDelWish,onAddSelfWish,onB
   return(<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>{slices.map((s,i)=><path key={i} d={s.path} fill={s.color} stroke="#fff" strokeWidth="2"/>)}<circle cx={cx} cy={cy} r={ri-2} fill="white"/></svg>);
 }
 function StatsTab({trip,allCurrs,cards,customPays,onOpenPrint,onExportCSV,onSetCustomDays}){
-  const myTotal=trip.expenses.reduce((s,e)=>s+(e.myShare??0),0);
+  const myTotal=(trip.expenses??[]).reduce((s,e)=>s+(e.myShare??0),0);
   const overseasTotal=trip.expenses.filter(e=>e.isOverseas!==false).reduce((s,e)=>s+(e.myShare??0),0);
   const domesticTotal=trip.expenses.filter(e=>e.isOverseas===false).reduce((s,e)=>s+(e.myShare??0),0);
   const byCat=CATS.map(c=>({...c,sum:trip.expenses.filter(e=>e.category===c.id).reduce((s,e)=>s+(e.myShare??0),0)})).filter(c=>c.sum>0).sort((a,b)=>b.sum-a.sum);
@@ -938,11 +964,11 @@ function StatsTab({trip,allCurrs,cards,customPays,onOpenPrint,onExportCSV,onSetC
   </div>);
 }
 function PrintReport({trip,mode,allCurrs,cards,onClose}){
-  const myTotal=trip.expenses.reduce((s,e)=>s+(e.myShare??0),0);
+  const myTotal=(trip.expenses??[]).reduce((s,e)=>s+(e.myShare??0),0);
   const byCat=CATS.map(c=>({label:c.l,value:trip.expenses.filter(e=>e.category===c.id).reduce((s,e)=>s+(e.myShare??0),0),color:c.c,emoji:c.e})).filter(c=>c.value>0).sort((a,b)=>b.value-a.value);
   const autodays=[...new Set(trip.expenses.map(e=>e.date))].length;
   const days=trip.customDays??autodays;
-  const grouped=trip.expenses.reduce((a,e)=>{(a[e.date]=a[e.date]||[]).push(e);return a;},{});
+  const grouped=(trip.expenses??[]).reduce((a,e)=>{(a[e.date]=a[e.date]||[]).push(e);return a;},{});
   const dates=Object.keys(grouped).sort((a,b)=>a.localeCompare(b));
   const allFriends=[...new Set((trip.receivables??[]).map(r=>r.friend))];
   const coverGrad=COVERS.find(c=>c.id===trip.coverId)?.g??COVERS[0].g;
@@ -1025,7 +1051,7 @@ export default function App(){
     {screen==="list"&&<>
       <TripList trips={store.trips} activeId={store.activeId} onSelect={openTrip} onCreate={()=>setModal("new")} onArchive={store.archiveTrip} onReopen={store.reopenTrip} onDelete={store.deleteTrip} onSettings={()=>setModal("settings")} allCurrs={store.allCurrs}/>
       {modal==="new"&&<NewTripSheet onSave={d=>{const id=store.createTrip(d);openTrip(id);}} onClose={()=>setModal(null)} allCurrs={store.allCurrs}/>}
-      {modal==="settings"&&<SettingsSheet banks={store.banks} setBanks={store.setBanks} cards={store.cards} setCards={store.setCards} friends={store.friends} setFriends={store.setFriends} trips={store.trips} customCurrs={store.customCurrs} setCustomCurrs={store.setCustomCurrs} customPays={store.customPays} setCustomPays={store.setCustomPays} apiKey={store.apiKey} setApiKey={store.setApiKey} onRestore={store.restoreAll} onClose={()=>setModal(null)}/>}
+      {modal==="settings"&&<SettingsSheet banks={store.banks} setBanks={store.setBanks} cards={store.cards} setCards={store.setCards} friends={store.friends} setFriends={store.setFriends} trips={store.trips} customCurrs={store.customCurrs} setCustomCurrs={store.setCustomCurrs} customPays={store.customPays} setCustomPays={store.setCustomPays} apiKey={store.apiKey} setApiKey={store.setApiKey} onRestore={store.restoreAll} refreshRates={store.refreshRates} ratesAt={store.ratesAt} onClose={()=>setModal(null)}/>}
     </>}
     {screen==="detail"&&trip&&<TripDetail trip={trip} store={store} banks={store.banks} cards={store.cards} friends={store.friends} allCurrs={store.allCurrs} onBack={()=>setScreen("list")}/>}
     {!welcomed&&<WelcomeModal onClose={closeWelcome}/>}
